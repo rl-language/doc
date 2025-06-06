@@ -1,8 +1,9 @@
 # Language Tour
 
-Rulebook is a compiled and statically checked language. Its defining innovation is the concept of **action functions**—a mechanism designed to handle complex interactions—enhanced with **SPIN** properties.
+[Rulebook](https://github.com/rl-language/rlc) is a compiled and statically checked language.
 
 ```rlc
+# rlc hellow world
 import serialization.print
 
 cls SimpleRegularCode:
@@ -15,6 +16,8 @@ fun main() -> Int:
     return 0
 ```
 
+Its defining innovation is the concept of **action functions**—a mechanism designed to handle complex interactions—enhanced with **SPIN** properties. Rulebook carefully combines multiple uncommon languages features in a imperative language that is more than the sum of the parts.
+
 ## Action Functions
 
 Rulebook is built to simplify the construction of [complex interactive subsystems](./the_inversion_of_control_problem.md#complex-interactive-subsystems). It achieves this through **SPIN functions**, which encapsulate stateful, inspectable logic without taking over control flow.
@@ -26,7 +29,7 @@ Rulebook is built to simplify the construction of [complex interactive subsystem
 * [Inspectable](#inspectable)
 * [No-main loop owning](#no-main-loop-ownership)
 
-These properties allow developers to [store, load, print, replay, and modify](#spin-functions-implications) both program state and execution traces in a principled and testable way.
+These properties allow developers to [store, load, print, replay, and modify](#spin-function-implications) both program state and execution traces in a principled and testable way.
 
 ---
 
@@ -86,6 +89,12 @@ fun main() -> Int:
 ```
 
 In Rulebook, **suspension points** inside action functions are called **action statements**. These can take arguments and may include a **boolean condition** that defines when the action is valid. By using the `can` operator, the framework can check whether a given user input is valid **before** applying it—without complicating the action function with manual validation logic.
+
+Beside `can` operator invocations, the spirit of Rulebook is to be used by other languages, so depending on your use case you configure how rulebook behaves when a precondition is not met but a function is called anyway.
+* By default rulebook emits checks that invoke `rlc_abort`, a function that can be customized. The customization allows us for example to print a python stack trace when rulebook is used with full python interoperability. In our [4Hammer example](https://github.com/rl-language/4Hammer/blob/master/src/gdexample.cpp#L30) we customize for linux only the stack printing mechanism so we can see what is going on inside godot.
+* If you need maximum speed, or you know that the caller will never invoke wrong actions by construction (for example,the c# wrapper checks for preconditions too and emits a exception if they are not met), you can disable checks from within rulebook code.
+
+This makes precondition checkability a zero cost abstraction that you pay for only when you use it.
 
 ---
 
@@ -210,7 +219,7 @@ By recording and replaying action sequences, you can rigorously test application
 
 ## Action Statement Classes
 
-In interactive systems, you may want to **delay** the execution of an action—such as processing a user click after a few frames. Rulebook makes this possible using the `@classes` attribute on action functions.
+In interactive systems, you may want to **delay** the execution of an action—such as processing a user click after a few frames. Rulebook makes this possible using the `@classes` attribute on [action functions](#action-functions).
 
 Here’s an example. A rendering loop polls GUI events, converts them into actions, queues them, and applies them with a delay:
 
@@ -570,8 +579,6 @@ rlc-learn file.rl -o network #ctrl+c to stop it after a while
 rlc-play file.rk network # to see a game
 ```
 
-## Reinforcement Learning
-
 The user never had to specify anything related to reinforcement learning. They simply defined the environment's rules—and everything else was inferred automatically.
 
 The system learns to maximize the score based on how the game works. That score can be visualized later, making this approach valuable in two ways:
@@ -583,7 +590,7 @@ The system learns to maximize the score based on how the game works. That score 
 
 ## Self-Configuring UIs
 
-One of Rulebook’s unique strengths is that it **exposes all action types** available in an action function. This allows UI code to:
+One of Rulebook’s unique strengths is that it **exposes all [action types](#action-statement-classes)** available in an [action function](#action-functions). This allows UI code to:
 
 * Inspect the current program state.
 * Determine which actions are currently valid.
@@ -691,18 +698,20 @@ All advanced features in Rulebook are **opt-in**. If you don’t use them, you p
 
 Rulebook is designed to **scale gracefully** based on the features you choose to use.
 
+More on interoperability [here](./interoperating.md).
+
 ---
 
 ## Remote Execution
 
-Since Rulebook supports serialization and is compatible across multiple languages, **remote execution** can be implemented at the **action trace level**.
+Since Rulebook supports [serialization](#serializable) for [action statement classes](#action-statement-classes) and is [interoperable](compatibility) across multiple languages, **remote execution** can be implemented at the **action trace level**.
 
 That means:
 
 * You can run identical programs in two separate processes (even across languages).
 * As one instance executes actions, the trace can be sent to and replayed by the other.
 
-This enables powerful distributed testing and simulation scenarios, and it's already used in the [4Hammer project](https://github.com/rl-language/4Hammer). It’s a natural extension of Rulebook’s [SPIN function](#spin-functions-implications) architecture.
+This enables powerful distributed testing and simulation scenarios, and it's already used in the [4Hammer project](https://github.com/rl-language/4Hammer). It’s a natural extension of Rulebook’s [SPIN function](#spin-function-implications) architecture.
 
 ---
 

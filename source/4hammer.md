@@ -15,6 +15,8 @@ Thanks to Rulebook, 4Hammer automatically gains:
 
 Depending on the complexity of the problem 4Hammer is addressing, 5,000 lines of code might seem like a lot—or not. It’s difficult to make a direct comparison, but at feature parity, we believe that using another language would have required **5 to 20 times more code**, depending on the language and tooling.
 
+The project rationale is explained in detail in the related [paper](https://arxiv.org/abs/2505.13638)
+
 ---
 
 ## The Size of the Problem
@@ -638,9 +640,7 @@ To better understand the complexity of interactive sequences in **Warhammer 40,0
 
 This information must be **visible to the user** during interaction.
 
----
-
-### Additional Requirements from 4Hammer
+#### Additional Requirements from 4Hammer
 
 Because of 4Hammer’s goals, the dice roll sequence must satisfy additional constraints:
 
@@ -651,7 +651,6 @@ Because of 4Hammer’s goals, the dice roll sequence must satisfy additional con
 * ✅ **Inspectable**: The final result of the roll must be stored and accessible (e.g., for UI rendering).
 
 The following graph shows the how the control flow may evolve when rolling a die.
-
 
 
 ```{tikz}
@@ -691,12 +690,16 @@ This is the simplest interactive sequence of the game, which is then reused in m
 
 If you are new to Rulebook, stop for a second thinking how you would implement a program that meets all requirements.
 
-We have omitted all serialization methods that would require to be hand written in cpp, but the cpp encoding that achieves all requirements is:
+#### CPP Implementation
+
+The following code is the cpp implementation that achieves all requirements stated in the previous [section](#rolling-a-die).
+
+To make the comparison more fair we have omitted all serialization methods that would require to be hand written in cpp, which could be generated in other languages such as python. Similarly we have removed all empty lines and put comments next to each line of code, so that we don't get accused of trying to inflate the code size. The code has been written in a style similar to [automata base programming](https://en.wikipedia.org/wiki/Automata-based_programming) which is a well know way of writing state machines in c and cpp. The implementation is mandatory, you cannot use CPP20 coroutines because they have no mechanism for precondition checking, or state inspection.
+
+
 ```cpp
 class RerrolableRoll {
-    // data to require to serialize and restore the state
-    public:
-
+    public: // data to require to serialize and restore the state
     int suspensionPoint; // keeps track of what is the current point of the sequence
     Dice result; // the final result of the roll
     bool can_reroll; // can reroll for free
@@ -704,9 +707,7 @@ class RerrolableRoll {
     bool can_cp_reroll; // can reroll by paying a command point
     bool is_non_cp_rerollable; //it is rerollable in a way that does not cost a cp
     Bool current_player; // the player that is performing the roll, bool is fine since it is a two player game
-
-    // constructor that starts the sequence
-    RerollebleRoll(
+    RerollebleRoll( // constructor that starts the sequence
         bool can_reroll,
         bool can_reroll_1s,
         bool can_cp_reroll,
@@ -719,41 +720,27 @@ class RerrolableRoll {
         can_cp_reroll(can_cp_reroll),
         is_non_cp_rerollable(is_non_cp_rerollable),
         current_player(current_player) {}
-
     void roll(GameState& state, Dice dice) {
-        assert(can_roll(state) );
+        assert(can_roll(state), sate);
         result = dice;
-
         if (suspensionPoint == 0){ // if this is the first time we roll the dice
-            // figure out if we can reroll for free
-            is_non_cp_rerollable = can_reroll or (can_reroll_1s and result == 1)
-            // figure out if the player has already rerolled a dice this phase
-            is_cp_rerollable = cp_rerollable and board.can_use_strat(current_player, Stratagem::reroll)
-
-
+            is_non_cp_rerollable = can_reroll or (can_reroll_1s and result == 1) // figure out if we can reroll for free
+            is_cp_rerollable = cp_rerollable and board.can_use_strat(current_player, Stratagem::reroll) // figure out if the player has already rerolled a dice this phase
             if (is_non_cp_rerollable or is_cp_rerollable) { // if we can reroll in any way
-                // the next state is waiting for the user decision
-                suspensionPoint = 1;
+                suspensionPoint = 1; // the next state is waiting for the user decision
+            } else {
+                suspensionPoint = -1; // otherwise we are done
             }
-            else {
-                // otherwise we are done
-                suspensionPoint = -1;
-            }
-
         } else if (suspensionPoint == 2) { // if it is the second roll
-            // if the roll was not free
-            if (!is_non_cp_rerollable) {
+            if (!is_non_cp_rerollable) { // if the roll was not free
                 board.consume_command_point();
             }
             result = dice;
         }
     }
     bool can_roll(GameState& state, Dice dice) {
-        // actions have no precondition, so we just need to check
-        // if the resume index is the associated to the first or second roll
-        return suspensionPoint == 0 or suspensionPoint == 2;
+        return suspensionPoint == 0 or suspensionPoint == 2; // actions have no precondition, so we just need to check if the resume index is the associated to the first or second roll
     }
-
     void keep_it(GameState& state, Bool do_it) {
         assert(can_keep_it(state, dice));
         if (do_it)
@@ -761,70 +748,41 @@ class RerrolableRoll {
         else
             suspensionPoint = -1; // goes to the end
     }
-
     bool can_keep_it(GameState& state, Bool do_it) {
         return suspensionPoint == 1;
     }
-
-    // a class that rappresents a action, in a way that can be stored and executed later
-    struct ActionRoll {
+    struct ActionRoll { // a class that rappresents a action, in a way that can be stored and executed later
         Dice roll;
-
         void apply(RerollableDiceRoll rollBeingResolved, GameState& state) {
            rollBeingResolved.roll(state, roll);
         }
-
         bool can_apply(RerollableDiceRoll rollBeingResolved, GameState& state) {
            return rollBeingResolved.can_roll(state, roll);
         }
-
     };
-
     struct ActionKeepIt {
         bool do_it;
-
         void apply(RerollableDiceRoll rollBeingResolved, GameState& state) {
            rollBeingResolved.keep_it(state, do_it);
         }
-
         bool can_apply(RerollableDiceRoll rollBeingResolved, GameState& state) {
            return rollBeingResolved.do_it(state, do_it);
        }
-
     };
-
-    // a union between all possible actions so that they stored in a single cpp vector without inheritance
-    struct AnyRerollableDiceRollAction  {
-        union PayLoad{
-            ActionRoll first;
-            ActionKeepIt second;
-        };
-        PayLoad content;
-        Int currentActiveIndex;
-
-        void apply(ReroolableDiceRoll rollBeingResolved, GameState& staet){
-          if (currentActiveIndex == 0) {
-            content.first.apply(rollBeingResolved, state);
-          } else {
-            content.second.apply(rollBeingResolved, state);
-          }
-        }
-
-        void can_apply(ReroolableDiceRoll rollBeingResolved, GameState& staet){
-          if (currentActiveIndex == 0) {
-            return content.first.can_apply(rollBeingResolved, state);
-          } else {
-            return content.second.can_apply(rollBeingResolved, state);
-          }
-        };
-    };
-
+    using AnyRerollableDiceRollAction = std::variant<ActionRoll, ActionKeepIt> // a union between all possible actions so that they stored in a single cpp vector without inheritance
+    void apply(AnyRerollableDiceRollAction& self, RerollableDiceRoll rollBeingResolved, GameState& state){
+        std::apply([&](auto& activeAlternative){ activeAlternative.apply(rollBeingResolved, state); }, self);
+    }
+    bool can_apply(AnyRerollableDiceRollAction& self, RerollableDiceRoll rollBeingResolved, GameState& state){
+        return std::apply([&](auto& activeAlternative){ activeAlternative.can_apply(rollBeingResolved, state); }, self);
+    }
 };
-
 ```
-The code stores all the variables required to suspend the execution in the class body, then exposes 2 function for each action that can be performed. One to check if the action is valid, one to execute it. The functions that performs the actions contain a handrolled state machine. Finally, to be able to delay execution of actions, they are wrapped as well into a class. Even without all the serialization functions that have been omitted and can sometimes be generated in other languages, there is strong coupling between various components of the system, and modifying this implementation without breaking it is hard. Languages like python may save you the union at the cost of runtime performance, but most of the code just shown is mandatory in almost every imperative language.
+The code stores all the variables required to suspend the execution in the class body, then exposes 2 function for each action that can be performed. One to check if the action is valid, one to execute it. The functions that performs the actions contain a handrolled state machine. Finally, to be able to delay execution of actions, they are wrapped as well into a class. Even without all the serialization functions that have been omitted and can sometimes be generated in other languages, there is strong coupling between various components of the system, and modifying this implementation without breaking it is hard. Languages like python may save you the union at the cost of runtime performance, but most of the code just shown is mandatory in almost every imperative language. There is a logical error in the code. Did you spot it?
 
 Here is the implementation in Rulebook instead
+
+#### Rulebook Implementation
 
 ```rlc
 act rerollable_dice_roll(ctx Board board,
@@ -836,16 +794,17 @@ act rerollable_dice_roll(ctx Board board,
     act roll(frm Dice result)
     frm is_non_cp_rerollable = reroll or (reroll_1s and result == 1)
     let is_cp_rerollable = cp_rerollable and board.can_use_strat(current_player, Stratagem::reroll)
-    if is_non_cp_rerollable or is_cp_rerollable:
-        # reject the possibility of rerolling the dice and keep the current result
-        act keep_it(Bool do_it)
-        if do_it:
-            return
-        # resets the rolled value
-        act reroll(Dice new_value)
-        if !is_non_cp_rerollable:
-            board.spend_command_point()
-        result = new_value
+    if !is_non_cp_rerollable and !is_cp_rerollable:
+        return
+    # reject the possibility of rerolling the dice and keep the current result
+    act keep_it(Bool do_it)
+    if do_it:
+        return
+    # resets the rolled value
+    act reroll(Dice new_value)
+    if !is_non_cp_rerollable:
+        board.spend_command_point()
+    result = new_value
 ```
 
 This implementation generates a series of classes that are equivalent to the cpp ones, including all serializers that have been omitted before. You can notice there is no coupling between any part of the system, and modifying the code to add another action or another condition would only require local changes.
